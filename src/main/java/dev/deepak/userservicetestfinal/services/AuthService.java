@@ -1,6 +1,7 @@
 package dev.deepak.userservicetestfinal.services;
 
 import dev.deepak.userservicetestfinal.dtos.UserDto;
+import dev.deepak.userservicetestfinal.exceptions.LoginFailedException;
 import dev.deepak.userservicetestfinal.models.Role;
 import dev.deepak.userservicetestfinal.models.SessionStatus;
 import dev.deepak.userservicetestfinal.models.User;
@@ -9,6 +10,7 @@ import dev.deepak.userservicetestfinal.repositories.SessionRepository;
 import dev.deepak.userservicetestfinal.repositories.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.MacAlgorithm;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.springframework.http.HttpHeaders;
@@ -23,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
+@Slf4j
 public class AuthService {
     private UserRepository userRepository;
     private SessionRepository sessionRepository;
@@ -34,20 +37,27 @@ public class AuthService {
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
     }
 
-    public ResponseEntity<UserDto> login(String email, String password) {
+    public ResponseEntity<UserDto> login(String email, String password) throws LoginFailedException {
         Optional<User> userOptional = userRepository.findByEmail(email);
 
         if (userOptional.isEmpty()) {
-            return null;
+            //throw an exception
+            throw new LoginFailedException("Username or Password is wrong!");
         }
 
         User user = userOptional.get();
 
         if (!bCryptPasswordEncoder.matches(password, user.getPassword())) {
             //throw an exception
-            throw new RuntimeException("Wrong password entered");
+            throw new LoginFailedException("Username or Password is wrong!");
         }
 
+        int sessions = sessionRepository.countSessionByUserIdAndSessionStatus(user.getId(), SessionStatus.ACTIVE);
+        if (sessions>=2) {
+            throw new LoginFailedException("Too many logins! Please log out from some of the devices!");
+        }
+
+        log.info("no of sessions present: {}", sessions);
         //Generating the token
         //String token = RandomStringUtils.randomAlphanumeric(30);
 
@@ -64,11 +74,12 @@ public class AuthService {
 //                "  \"expiry\": \"31stJan2024\"\n" +
 //                "}";
         //JSON -> Key : Value
+        Date expiry = DateUtils.addDays(new Date(), 30);
         Map<String, Object> jsonMap = new HashMap<>();
         jsonMap.put("email", user.getEmail());
         jsonMap.put("roles", List.of(user.getRoles()));
         jsonMap.put("createdAt", new Date());
-        jsonMap.put("expiryAt", DateUtils.addDays(new Date(), 30));
+        jsonMap.put("expiryAt", expiry);
 
         //byte[] content = message.getBytes(StandardCharsets.UTF_8);
 
@@ -77,6 +88,7 @@ public class AuthService {
         String jws = Jwts.builder()
                 .claims(jsonMap)
                 .signWith(key, alg)
+                .expiration(expiry)
                 .compact();
 
         // Parse the compact JWS:
@@ -87,7 +99,7 @@ public class AuthService {
         session.setSessionStatus(SessionStatus.ACTIVE);
         session.setToken(jws);
         session.setUser(user);
-        //session.setExpiringAt(//current time + 30 days);
+        session.setExpiringAt(expiry);
         sessionRepository.save(session);
 
         UserDto userDto = new UserDto();

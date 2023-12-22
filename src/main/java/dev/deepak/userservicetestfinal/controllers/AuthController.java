@@ -1,6 +1,7 @@
 package dev.deepak.userservicetestfinal.controllers;
 
 import dev.deepak.userservicetestfinal.dtos.*;
+import dev.deepak.userservicetestfinal.exceptions.LoginFailedException;
 import dev.deepak.userservicetestfinal.models.SessionStatus;
 import dev.deepak.userservicetestfinal.services.AuthService;
 import org.springframework.http.HttpStatus;
@@ -20,7 +21,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<UserDto> login(@RequestBody LoginRequestDto request) {
+    public ResponseEntity<UserDto> login(@RequestBody LoginRequestDto request)
+            throws LoginFailedException {
         return authService.login(request.getEmail(), request.getPassword());
     }
 
